@@ -14,22 +14,27 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @RequiredArgsConstructor
-@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
 public class GameServiceImpl implements IGameService {
 
-    Logger logger = LoggerFactory.getLogger(GameServiceImpl.class);
-    UserRepository userRepository;
-    ILeaderboardService leaderboardService;
+    private final UserRepository userRepository;
+    private final ILeaderboardService leaderboardService;
+    private final AtomicInteger totalGuesses = new AtomicInteger(0);
+    private final AtomicInteger totalWins = new AtomicInteger(0);
+
+    @Value("${game.win-rate:5}")
+    private int winRatePercentage;
 
 
     @Override
@@ -37,6 +42,7 @@ public class GameServiceImpl implements IGameService {
     @CacheEvict(value = "userInfo", key = "#username")
     public GuessResponse guess(String username, int guessNumber) {
 
+        totalGuesses.incrementAndGet();
         log.debug("User {} is guessing number: {}", username, guessNumber);
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> {
@@ -56,7 +62,7 @@ public class GameServiceImpl implements IGameService {
         }
 
         int serverNumber = ThreadLocalRandom.current().nextInt(1, 6);
-        boolean isWin = (guessNumber == serverNumber);
+        boolean isWin = determineWin(guessNumber, serverNumber);
 
         user.setTurns(user.getTurns() - 1);
 
@@ -65,13 +71,22 @@ public class GameServiceImpl implements IGameService {
             user.setScore(user.getScore() + 1);
             message = "Congratulations! You guessed correctly!";
             leaderboardService.invalidateCache();
-            logger.info("User {} won! Score: {}", username, user.getScore());
+            totalWins.incrementAndGet();
+            log.info("User {} won! Score: {}", username, user.getScore());
         } else {
             message = "Wrong guess. Try again!";
-            logger.info("User {} lost. Server number was: {}", username, serverNumber);
+            log.info("User {} lost. Server number was: {}", username, serverNumber);
         }
 
         userRepository.save(user);
+
+        //check win rate
+        int total = totalGuesses.get();
+        int win = totalWins.get();
+        double winRate = total > 0 ? (win * 100.0 / total) : 0.0;
+
+        log.info("Current win rate: {}% ({} wins / {} guesses)", String.format("%.2f", winRate), win, total);
+
 
         return GuessResponse.builder()
                 .win(isWin)
@@ -80,6 +95,19 @@ public class GameServiceImpl implements IGameService {
                 .turnsLeft(user.getTurns())
                 .message(message)
                 .build();
+    }
+
+    private boolean determineWin(int guessNumber, int serverNumber) {
+        int randomChance = ThreadLocalRandom.current().nextInt(100);
+        boolean isWin = randomChance < winRatePercentage;
+
+        if (isWin) {
+            log.info("Lucky win! Random chance: {}/{}", randomChance, winRatePercentage);
+        } else {
+            log.info("Lost. Random chance: {}/{}", randomChance, winRatePercentage);
+        }
+
+        return isWin;
     }
 
     @Override
@@ -95,7 +123,7 @@ public class GameServiceImpl implements IGameService {
         user.setTurns(user.getTurns() + 5);
         userRepository.save(user);
 
-        logger.info("User {} bought 5 turns. Total turns: {}", username, user.getTurns());
+        log.info("User {} bought 5 turns. Total turns: {}", username, user.getTurns());
 
     }
 
