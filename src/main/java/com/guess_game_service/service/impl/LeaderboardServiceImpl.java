@@ -12,6 +12,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +27,7 @@ public class LeaderboardServiceImpl implements ILeaderboardService {
     UserRepository userRepository;
 
     @Override
+    @Transactional(readOnly = true)
     @Cacheable(value = "leaderboard", key = "'top10'")
     public List<LeaderboardResponse> getTop10() {
         log.info("Fetching top 10 leaderboard from database");

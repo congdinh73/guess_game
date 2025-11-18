@@ -111,6 +111,7 @@ public class GameServiceImpl implements IGameService {
     }
 
     @Override
+    @Transactional
     @CacheEvict(value = "userInfo", key = "#username")
     public void buyTurns(String username) {
         log.info("User {} is buying turns", username);
@@ -128,6 +129,7 @@ public class GameServiceImpl implements IGameService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     @Cacheable(value = "userInfo", key = "#username")
     public UserInfoResponse getUserInfo(String username) {
         log.debug("Fetching user info for: {}", username);
